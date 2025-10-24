@@ -1,19 +1,16 @@
 import pygame
 from utils.settings import *
 from game.player import Player
+from game.maze import Maze
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("AI Game Prototype")
+pygame.display.set_caption("AI Maze Collision Demo")
 clock = pygame.time.Clock()
 
-player = Player(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+maze = Maze()
+player = Player(TILE_SIZE, TILE_SIZE)
 
-# Цвета
-BG_COLOR = (30, 30, 30)
-PLAYER_COLOR = (0, 200, 255)
-
-# Основной цикл
 running = True
 while running:
     clock.tick(FPS)
@@ -21,11 +18,13 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    player.handle_input()
-    player.update()
+    player.handle_input(maze)
+    player.update_trails()
 
-    screen.fill((30, 30, 30))
+    screen.fill((0, 0, 0))
+    maze.draw(screen)
     player.draw(screen)
+
     pygame.display.flip()
 
 pygame.quit()
