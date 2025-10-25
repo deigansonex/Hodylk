@@ -3,8 +3,11 @@ import pygame
 from utils.settings import *
 
 class Maze:
-    def __init__(self):
-        self.grid = [[1 for _ in range(MAZE_COLS)] for _ in range(MAZE_ROWS)]  # 1 = стена, 0 = проход
+    def __init__(self, width, height, cell_size):
+        self.width = width
+        self.height = height
+        self.cell_size = cell_size
+        self.grid = [[1 for _ in range(width)] for _ in range(height)]
         self._generate_maze()
 
     def _generate_maze(self):
