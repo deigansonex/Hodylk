@@ -4,15 +4,21 @@ from game.player import Player
 from game.maze import Maze
 from game.collectibles import CollectibleManager
 
-
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("AI Maze Collision Demo")
 clock = pygame.time.Clock()
 
-maze = Maze(width=31, height=31, cell_size=20)
-collectibles = CollectibleManager(maze, count=7)
-player = Player(TILE_SIZE, TILE_SIZE)
+# --- ИНИЦИАЛИЗАЦИЯ ИГРЫ ---
+maze = Maze(width=33, height=25, cell_size=24)
+player = Player(maze, start_cell=(1, 1))
+collectibles = CollectibleManager(maze, count=10, visual_fraction=0.6)
+
+# --- ТАЙМЕР ---
+TOTAL_TIME = 120  # секунд
+start_ticks = pygame.time.get_ticks()  # время начала в миллисекундах
+
+font = pygame.font.Font(None, 36)  # шрифт для отображения текста
 
 running = True
 while running:
@@ -21,39 +27,35 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
+    # --- ОБНОВЛЕНИЕ СОСТОЯНИЯ ---
     player.handle_input(maze)
     player.update_trails()
-
     player_rect = player.rect
 
-
-    # Проверка сбора предметов
     collectibles.check_collection(player_rect)
 
-    # Проверка победы
+    # --- ПРОВЕРКА ПОБЕДЫ ---
     if collectibles.all_collected():
         print("🎉 Победа! Все предметы собраны!")
         running = False
 
+    # --- ПРОВЕРКА ВРЕМЕНИ ---
+    seconds_passed = (pygame.time.get_ticks() - start_ticks) / 1000
+    time_left = max(0, TOTAL_TIME - seconds_passed)
+
+    if time_left <= 0:
+        print("⏰ Время вышло! Поражение!")
+        running = False
+
+    # --- ОТРИСОВКА ---
     screen.fill((0, 0, 0))
     maze.draw(screen)
-
-
-    # debug: нарисовать точки в центрах всех свободных ячеек
-    def debug_draw_free_cells(surface, maze):
-        for y in range(maze.height):
-            for x in range(maze.width):
-                if maze.grid[y][x] == 0:
-                    cx = x * maze.cell_size + maze.cell_size // 2
-                    cy = y * maze.cell_size + maze.cell_size // 2
-                    pygame.draw.circle(surface, (0, 255, 0), (cx, cy), 3)
-
-
-    # в основном цикле отрисовки (после maze.draw(screen))
-    debug_draw_free_cells(screen, maze)
-
     collectibles.draw(screen)
     player.draw(screen)
+
+    # Текст таймера
+    timer_text = font.render(f"Time: {int(time_left)}", True, (227, 34, 60))
+    screen.blit(timer_text, (10, 10))
 
     pygame.display.flip()
 
