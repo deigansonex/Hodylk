@@ -3,23 +3,25 @@ from utils.settings import *
 from game.player import Player
 from game.maze import Maze
 from game.collectibles import CollectibleManager
+from game.bot import Bot  # добавили импорт
 
 def start_new_game():
     """Функция для сброса и начала новой игры"""
     maze = Maze(width=33, height=25, cell_size=24)
     player = Player(maze, start_cell=(1, 1))
+    bot = Bot(maze, start_cell=(31, 23))  # бот появляется в противоположном углу
     collectibles = CollectibleManager(maze, count=10, visual_fraction=0.6)
     start_ticks = pygame.time.get_ticks()
-    return maze, player, collectibles, start_ticks
+    return maze, player, bot, collectibles, start_ticks
 
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("AI Maze Collision Demo")
+pygame.display.set_caption("Predator vs Player")
 clock = pygame.time.Clock()
 
 # --- Первая инициализация ---
-maze, player, collectibles, start_ticks = start_new_game()
+maze, player, bot, collectibles, start_ticks = start_new_game()
 TOTAL_TIME = 60  # секунд
 font = pygame.font.Font(None, 36)
 large_font = pygame.font.Font(None, 96)
@@ -43,18 +45,28 @@ while running:
         player.update_trails()
         player_rect = player.rect
 
+        # бот двигается по следу
+        bot.update(maze, player)
+
+        # проверка сбора предметов
         collectibles.check_collection(player_rect)
 
-        # Проверка победы
+        # проверка победы игрока
         if collectibles.all_collected():
             win = True
             game_over = True
             end_message = "🎉 Победа! Все предметы собраны!"
 
-        # Проверка времени
+        # проверка поимки игрока ботом
+        if bot.caught_player(player):
+            win = False
+            game_over = True
+            end_message = "💀 Игрок пойман ботом!"
+
+        # проверка времени
         seconds_passed = (pygame.time.get_ticks() - start_ticks) / 1000
         time_left = max(0, TOTAL_TIME - seconds_passed)
-        if time_left <= 0:
+        if time_left <= 0 and not game_over:
             win = False
             game_over = True
             end_message = "⏰ Время вышло! Поражение!"
@@ -64,6 +76,7 @@ while running:
         maze.draw(screen)
         collectibles.draw(screen)
         player.draw(screen)
+        bot.draw(screen)
 
         # Таймер
         timer_text = font.render(f"Time: {int(time_left)}", True, (227, 34, 60))
@@ -92,7 +105,7 @@ while running:
 
         # Нажатие R для перезапуска
         if keys[pygame.K_r]:
-            maze, player, collectibles, start_ticks = start_new_game()
+            maze, player, bot, collectibles, start_ticks = start_new_game()
             game_over = False
             fade_alpha = 0
             win = False

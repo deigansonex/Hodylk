@@ -1,4 +1,5 @@
 import pygame
+from utils.settings import *
 
 class Player:
     def __init__(self, maze, start_cell=(1, 1)):
@@ -19,7 +20,7 @@ class Player:
         self.rect = pygame.Rect(x, y, self.size, self.size)
         self.color = (0, 200, 255)
         self.trails = []
-        self.speed = int(self.cell_size * 0.1)  # скорость зависит от масштаба
+        self.speed = PLAYER_SPEED  # скорость зависит от масштаба
 
     def handle_input(self, maze):
         keys = pygame.key.get_pressed()
