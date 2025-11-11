@@ -4,6 +4,7 @@ from game.player import Player
 from game.maze import Maze
 from game.collectibles import CollectibleManager
 from game.bot import Bot
+from rl_training import load_agents  # <--- RL модели
 
 
 def start_new_game():
@@ -20,8 +21,11 @@ def start_new_game():
     prey_bot = Bot(maze, start_cell=desired_prey, color=(50, 180, 255), visual_frac=0.6)
     hunter_bot = Bot(maze, start_cell=desired_hunter, color=(255, 80, 80), visual_frac=0.6)
 
+    # загружаем обученных агентов
+    hunter_agent, prey_agent = load_agents(maze)
+
     start_ticks = pygame.time.get_ticks()
-    return maze, player, prey_bot, hunter_bot, collectibles, start_ticks
+    return maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent
 
 
 pygame.init()
@@ -30,7 +34,7 @@ pygame.display.set_caption("AI Maze RL Prototype")
 clock = pygame.time.Clock()
 
 # --- Первая инициализация ---
-maze, player, prey_bot, hunter_bot, collectibles, start_ticks = start_new_game()
+maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent = start_new_game()
 TOTAL_TIME = 60  # секунд
 font = pygame.font.Font(None, 36)
 large_font = pygame.font.Font(None, 96)
@@ -50,21 +54,26 @@ while running:
     keys = pygame.key.get_pressed()
 
     if not game_over:
-        # --- ДВИЖЕНИЕ И ПРОВЕРКИ ---
+        # --- Движение игрока ---
         player.handle_input(maze)
         player.update_trails()
 
-        # боты совершают случайные шаги (пока без обучения)
-        prey_bot.random_walk()
-        hunter_bot.random_walk()
+        # --- RL-управление ботами ---
+        hunter_state = (prey_bot.grid_x - hunter_bot.grid_x, prey_bot.grid_y - hunter_bot.grid_y)
+        prey_state = (hunter_bot.grid_x - prey_bot.grid_x, hunter_bot.grid_y - prey_bot.grid_y)
 
-        # проверка коллизии охотника и жертвы
+        hunter_action = hunter_agent.choose_action(hunter_state)
+        prey_action = prey_agent.choose_action(prey_state)
+
+        hunter_bot.move_direction(hunter_action)
+        prey_bot.move_direction(prey_action)
+
+        # --- Проверка столкновений ---
         if hunter_bot.rect.colliderect(prey_bot.rect):
             win = False
             game_over = True
             end_message = "😈 Охотник поймал жертву!"
 
-        # проверка сбора предметов
         player_rect = player.rect
         collectibles.check_collection(player_rect)
 
@@ -73,7 +82,7 @@ while running:
             game_over = True
             end_message = "🎉 Победа! Все предметы собраны!"
 
-        # проверка времени
+        # --- Проверка времени ---
         seconds_passed = (pygame.time.get_ticks() - start_ticks) / 1000
         time_left = max(0, TOTAL_TIME - seconds_passed)
         if time_left <= 0 and not game_over:
@@ -81,7 +90,7 @@ while running:
             game_over = True
             end_message = "⏰ Время вышло! Поражение!"
 
-        # --- ОТРИСОВКА ---
+        # --- Отрисовка ---
         screen.fill((0, 0, 0))
         maze.draw(screen)
         collectibles.draw(screen)
@@ -89,12 +98,11 @@ while running:
         prey_bot.draw(screen)
         hunter_bot.draw(screen)
 
-        # таймер
         timer_text = font.render(f"Time: {int(time_left)}", True, (227, 34, 60))
         screen.blit(timer_text, (10, 10))
 
     else:
-        # --- ЭКРАН КОНЦА ИГРЫ ---
+        # --- Экран конца игры ---
         fade_alpha = min(fade_alpha + 5, 180)
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.set_alpha(fade_alpha)
@@ -113,7 +121,7 @@ while running:
         if keys[pygame.K_ESCAPE]:
             running = False
         if keys[pygame.K_r]:
-            maze, player, prey_bot, hunter_bot, collectibles, start_ticks = start_new_game()
+            maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent = start_new_game()
             game_over = False
             fade_alpha = 0
             win = False
