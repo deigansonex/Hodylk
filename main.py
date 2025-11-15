@@ -1,52 +1,42 @@
-import pygame
+# main.py  (заменяет твой прежний main.py)
+import pygame, os
 from utils.settings import *
 from game.player import Player
-from game.maze import Maze
-from game.collectibles import CollectibleManager
-from game.bot import Bot
-from rl_training import load_agents  # <--- RL модели
-
-
-def start_new_game():
-    """Функция для сброса и начала новой игры"""
-    maze = Maze(width=33, height=25, cell_size=24)
-    player = Player(maze, start_cell=(1, 1))
-    collectibles = CollectibleManager(maze, count=10, visual_fraction=0.6)
-
-    # желаемые позиции для ботов (в grid-координатах)
-    desired_prey = (1, 1)
-    desired_hunter = (maze.width - 2, maze.height - 2)
-
-    # создаём ботов, они сами найдут ближайшие свободные клетки
-    prey_bot = Bot(maze, start_cell=desired_prey, color=(50, 180, 255), visual_frac=0.6)
-    hunter_bot = Bot(maze, start_cell=desired_hunter, color=(255, 80, 80), visual_frac=0.6)
-
-    # загружаем обученных агентов
-    hunter_agent, prey_agent = load_agents(maze)
-
-    start_ticks = pygame.time.get_ticks()
-    return maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent
-
+from rl.mapoca_env import MapocaEnv, ACTIONS
+from rl.loader import load_actors, actor_action
 
 pygame.init()
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("AI Maze RL Prototype")
+
+# небольшая проверка: если нет сохранённых моделей — треним быстро или используем random
+MODEL_DIR = "rl_models"
+have_models = os.path.exists(os.path.join(MODEL_DIR, "actor_h.pth")) and os.path.exists(os.path.join(MODEL_DIR, "actor_p.pth"))
+
+# сделаем env (и будем рисовать env.maze + env.hunter/env.prey)
+env = MapocaEnv(width=33, height=25, cell_size=24)
+maze = env.maze
+screen = pygame.display.set_mode((maze.width * maze.cell_size, maze.height * maze.cell_size))
+pygame.display.set_caption("MA-POCA demo")
 clock = pygame.time.Clock()
 
-# --- Первая инициализация ---
-maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent = start_new_game()
-TOTAL_TIME = 60  # секунд
+player = Player(maze, start_cell=(1,1))  # human player
+collectibles = None  # (optional) you can reuse your CollectibleManager if you want player to collect items
+
+# load actors if available
+if have_models:
+    actor_h, actor_p = load_actors()
+else:
+    actor_h = actor_p = None
+
+TOTAL_TIME = 60
 font = pygame.font.Font(None, 36)
-large_font = pygame.font.Font(None, 96)
 
 game_over = False
 win = False
-fade_alpha = 0
+start_ticks = pygame.time.get_ticks()
 
 running = True
 while running:
-    clock.tick(FPS)
-
+    dt = clock.tick(FPS)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -54,78 +44,65 @@ while running:
     keys = pygame.key.get_pressed()
 
     if not game_over:
-        # --- Движение игрока ---
+        # handle human movement
         player.handle_input(maze)
         player.update_trails()
 
-        # --- RL-управление ботами ---
-        hunter_state = (prey_bot.grid_x - hunter_bot.grid_x, prey_bot.grid_y - hunter_bot.grid_y)
-        prey_state = (hunter_bot.grid_x - prey_bot.grid_x, hunter_bot.grid_y - prey_bot.grid_y)
+        # get current obs for agents
+        obs_h, obs_p = env.get_obs()
 
-        hunter_action = hunter_agent.choose_action(hunter_state)
-        prey_action = prey_agent.choose_action(prey_state)
+        # choose actions (from model if exists, otherwise random)
+        if actor_h is not None:
+            ah = actor_action(actor_h, obs_h)
+            ap = actor_action(actor_p, obs_p)
+        else:
+            ah = env.sample_action()[0]
+            ap = env.sample_action()[1]
 
-        hunter_bot.move_direction(hunter_action)
-        prey_bot.move_direction(prey_action)
+        # apply actions (smooth movement via Bot.apply_action inside env.step)
+        (obs_h2, obs_p2), (rh, rp), done, info = env.step((ah, ap))
 
-        # --- Проверка столкновений ---
-        if hunter_bot.rect.colliderect(prey_bot.rect):
+        # draw everything
+        screen.fill((0,0,0))
+        maze.draw(screen)
+        # optionally draw player and trails
+        player.draw(screen)
+        env.prey.draw(screen)
+        env.hunter.draw(screen)
+
+        # timer
+        seconds_passed = (pygame.time.get_ticks() - start_ticks) / 1000
+        time_left = max(0, TOTAL_TIME - seconds_passed)
+        timer_text = font.render(f"Time: {int(time_left)}", True, (255,255,255))
+        screen.blit(timer_text, (10,10))
+
+        # win/lose checks
+        if env.hunter.rect.colliderect(env.prey.rect):
             win = False
             game_over = True
             end_message = "😈 Охотник поймал жертву!"
-
-        player_rect = player.rect
-        collectibles.check_collection(player_rect)
-
-        if collectibles.all_collected():
+        if time_left <= 0:
             win = True
             game_over = True
-            end_message = "🎉 Победа! Все предметы собраны!"
+            end_message = "⏰ Время вышло — жертва спаслась!"
 
-        # --- Проверка времени ---
-        seconds_passed = (pygame.time.get_ticks() - start_ticks) / 1000
-        time_left = max(0, TOTAL_TIME - seconds_passed)
-        if time_left <= 0 and not game_over:
-            win = False
-            game_over = True
-            end_message = "⏰ Время вышло! Поражение!"
-
-        # --- Отрисовка ---
-        screen.fill((0, 0, 0))
-        maze.draw(screen)
-        collectibles.draw(screen)
-        player.draw(screen)
-        prey_bot.draw(screen)
-        hunter_bot.draw(screen)
-
-        timer_text = font.render(f"Time: {int(time_left)}", True, (227, 34, 60))
-        screen.blit(timer_text, (10, 10))
+        pygame.display.flip()
 
     else:
-        # --- Экран конца игры ---
-        fade_alpha = min(fade_alpha + 5, 180)
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(fade_alpha)
-        overlay.fill((0, 0, 0))
-        screen.blit(overlay, (0, 0))
-
-        text_color = (80, 255, 80) if win else (255, 80, 80)
-        text = large_font.render("ПОБЕДА!" if win else "ПОРАЖЕНИЕ!", True, text_color)
-        text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
-        screen.blit(text, text_rect)
-
-        sub_text = font.render("Нажмите R, чтобы сыграть снова", True, (220, 220, 220))
-        sub_rect = sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40))
-        screen.blit(sub_text, sub_rect)
-
+        # end screen (simple)
+        screen.fill((0,0,0))
+        msg = "ПОБЕДА!" if win else "ПОРАЖЕНИЕ!"
+        txt = font.render(msg, True, (255,255,255))
+        screen.blit(txt, (20,20))
+        sub = font.render("R - restart, ESC - quit", True, (200,200,200))
+        screen.blit(sub, (20,60))
+        pygame.display.flip()
         if keys[pygame.K_ESCAPE]:
             running = False
         if keys[pygame.K_r]:
-            maze, player, prey_bot, hunter_bot, collectibles, start_ticks, hunter_agent, prey_agent = start_new_game()
+            env.reset()
+            start_ticks = pygame.time.get_ticks()
             game_over = False
-            fade_alpha = 0
             win = False
-
-    pygame.display.flip()
 
 pygame.quit()

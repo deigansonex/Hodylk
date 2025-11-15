@@ -1,78 +1,92 @@
 import pygame
 import random
-from utils.settings import *
-
 
 class Bot:
-    def __init__(self, maze, start_cell=(1, 1), color=(255, 255, 0), visual_frac=0.7):
+    def __init__(self, maze, start_cell, color=(255, 0, 0), speed=1.3, visual_frac=0.6):
         self.maze = maze
-        self.color = color
         self.cell_size = maze.cell_size
-        self.speed = self.cell_size // 4
-        self.visual_frac = visual_frac
+        self.color = color
+        self.speed = speed
 
-        # ищем ближайшую свободную клетку
-        self.grid_x, self.grid_y = self.find_nearest_free(start_cell)
+        self.size = int(self.cell_size * visual_frac)
 
-        # прямоугольник для отрисовки
-        self.rect = pygame.Rect(
-            self.grid_x * self.cell_size,
-            self.grid_y * self.cell_size,
-            int(self.cell_size * self.visual_frac),
-            int(self.cell_size * self.visual_frac),
-        )
-        self.update_rect_pos()
+        gx, gy = start_cell
+        x = gx * self.cell_size + (self.cell_size - self.size) // 2
+        y = gy * self.cell_size + (self.cell_size - self.size) // 2
 
-    def find_nearest_free(self, start_cell):
-        """Ищет ближайшую свободную клетку в лабиринте от заданной"""
-        sx, sy = start_cell
-        if self.is_free(sx, sy):
-            return sx, sy
-        # Поиск BFS
-        queue = [(sx, sy)]
-        visited = set(queue)
-        while queue:
-            x, y = queue.pop(0)
-            for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
-                nx, ny = x + dx, y + dy
-                if (nx, ny) not in visited and 0 <= nx < self.maze.width and 0 <= ny < self.maze.height:
-                    if self.is_free(nx, ny):
-                        return nx, ny
-                    visited.add((nx, ny))
-                    queue.append((nx, ny))
-        return sx, sy  # fallback
+        self.rect = pygame.Rect(x, y, self.size, self.size)
 
-    def is_free(self, x, y):
-        return 0 <= y < self.maze.height and 0 <= x < self.maze.width and self.maze.grid[y][x] == 0
+        self.target_dx = 0
+        self.target_dy = 0
+        self.change_dir_timer = 0
 
-    def move_direction(self, action):
-        """Двигается на 1 клетку в заданном направлении (U/D/L/R/Stay)"""
-        dx, dy = 0, 0
-        if action == "UP": dy = -1
-        elif action == "DOWN": dy = 1
-        elif action == "LEFT": dx = -1
-        elif action == "RIGHT": dx = 1
-        elif action == "STAY": pass
+    # ---------------------------------------------------------
 
-        new_x = self.grid_x + dx
-        new_y = self.grid_y + dy
+    def _collides(self, rect):
+        points = [
+            rect.topleft,
+            rect.topright,
+            rect.bottomleft,
+            rect.bottomright
+        ]
+        for x, y in points:
+            if self.maze.is_wall(x, y):
+                return True
+        return False
 
-        # проверка границ и стен
-        if 0 <= new_x < self.maze.width and 0 <= new_y < self.maze.height:
-            if self.maze.grid[new_y][new_x] == 0:
-                self.grid_x, self.grid_y = new_x, new_y
-                self.update_rect_pos()
-
-    def update_rect_pos(self):
-        """Обновляет положение прямоугольника на экране"""
-        px = self.grid_x * self.cell_size + (self.cell_size * (1 - self.visual_frac) / 2)
-        py = self.grid_y * self.cell_size + (self.cell_size * (1 - self.visual_frac) / 2)
-        self.rect.topleft = (px, py)
+    # ---------------------------------------------------------
 
     def random_walk(self):
-        """Простое случайное движение, если нет RL"""
-        direction = random.choice(["UP", "DOWN", "LEFT", "RIGHT", "STAY"])
-        self.move_direction(direction)
+        if self.change_dir_timer <= 0:
+            self.change_dir_timer = random.randint(20, 40)
+            dirs = [(1,0), (-1,0), (0,1), (0,-1), (0,0)]
+            self.target_dx, self.target_dy = random.choice(dirs)
+
+        self.change_dir_timer -= 1
+
+        dx = self.target_dx * self.speed
+        dy = self.target_dy * self.speed
+
+        new_x = self.rect.move(dx, 0)
+        if not self._collides(new_x):
+            self.rect = new_x
+
+        new_y = self.rect.move(0, dy)
+        if not self._collides(new_y):
+            self.rect = new_y
+
+    # ---------------------------------------------------------
+
+    def apply_action(self, action):
+        """
+        0 — стоять
+        1 — вверх
+        2 — вниз
+        3 — влево
+        4 — вправо
+        """
+        if action == 0:
+            dx = 0; dy = 0
+        elif action == 1:
+            dx = 0; dy = -self.speed
+        elif action == 2:
+            dx = 0; dy = self.speed
+        elif action == 3:
+            dx = -self.speed; dy = 0
+        elif action == 4:
+            dx = self.speed; dy = 0
+        else:
+            return
+
+        new_x = self.rect.move(dx, 0)
+        if not self._collides(new_x):
+            self.rect = new_x
+
+        new_y = self.rect.move(0, dy)
+        if not self._collides(new_y):
+            self.rect = new_y
+
+    # ---------------------------------------------------------
 
     def draw(self, screen):
         pygame.draw.rect(screen, self.color, self.rect)
